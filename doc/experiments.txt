@@ -1,0 +1,19 @@
+Wed Jun  9 16:31:24 CEST 2010
+
+- Total database size (xml.gz): 15025933 KB (includes only chromosome 1-22, X,
+  Y, M).
+- Size of chromosome Y: 6099 KB (0.04%).
+- Size of chromosome 17: 365872 KB (2.43%).
+
+Chrom | Threshold | #CpG variants
+---------------------------------
+Y     | 0         | 3025
+Y     | 1         | 75
+17    | 0         | 10563
+17    | 1         | 71
+
+Estimated total based on chromosome 17:
+Threshold | #CpG variants
+-------------------------
+0         | 433810
+1         | 2916
