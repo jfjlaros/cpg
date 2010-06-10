@@ -17,3 +17,15 @@ provides expat.h and expat.lib).
 
 Note that this program uses "37:GRCh37" as a reference sequence, if this is
 not correct, change the REF_BUILD constant in the source.
+
+The output is structured as follows:
+
+Name       | type    | Description
+---------------------------------------------------------------
+position   | integer | Position of the first SNP.
+id1        | integer | dbSNP rs number of the first SNP.
+id2        | integer | dbSNP rs number of the second SNP.
+freq_id2_1 | float   | Frequency of allele 1 of the second SNP.
+freq_id2_2 | float   | Frequency of allele 2 of the second SNP.
+freq_id1_1 | float   | Frequency of allele 1 of the first SNP.
+freq_id2_2 | float   | Frequency of allele 2 of the first SNP.

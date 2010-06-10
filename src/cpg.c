@@ -9,7 +9,7 @@
 // Definitions.
 //
 
-#define BUFFSIZE 8192            // Buffer size for the XML parser.
+#define BUFFSIZE 8192         // Buffer size for the XML parser.
 #define REF_BUILD "37:GRCh37" // Use this reference sequence.
 
 
@@ -21,7 +21,8 @@
 // Structure to hold crucial information of the candidates.
 //
 typedef struct _candidate {
-  int pos;     // The position of the SNP.
+  int pos,     // The position of the SNP.
+      id;      // The dbSNP rs number.
   char nuc;    // The nucleotide of interest: C means (C, A), G means (G, T).
   float freq1, // The frequency of the first nucleotide (C or G).
         freq2; // The frequency of the second nucleotide (A or T).
@@ -37,7 +38,9 @@ candidate *candidate_list = NULL; // List of (C, A) and (G, T) candidates.
 float freqs[4],              // Current maximum frequencies for A, C, G and T.
       FreqThreshold = 0.0;   // The minimum frequency threshold.
 int candidate_list_size = 0, // Size of candidate_list.
-    snp_location;            // Location of the SNP under scrutiny.
+    snp_location,            // Location of the SNP under scrutiny.
+    snp_id,                  // ID of the SNP under scrutiny.
+    orientation;             // Variable to compensate for reverse complement.
 
 
 //
@@ -86,6 +89,7 @@ int compar(const void *a, const void *b) {
 //
 // Global variables:      
 //   int snp_location ; The position of the SNP.
+//       snp_id       ; The id of the SNP.
 //
 // Global variables (altered):
 //   candidate_list_size ; Will be increased by one.
@@ -97,6 +101,7 @@ void add_candidate(char nuc, float freq1, float freq2) {
                                         candidate_list_size * 
                                         sizeof(candidate));
   candidate_list[candidate_list_size - 1].pos = snp_location;
+  candidate_list[candidate_list_size - 1].id = snp_id;
   candidate_list[candidate_list_size - 1].nuc = nuc;
   candidate_list[candidate_list_size - 1].freq1 = freq1;
   candidate_list[candidate_list_size - 1].freq2 = freq2;
@@ -119,13 +124,17 @@ void add_candidate(char nuc, float freq1, float freq2) {
 // Global variables (altered):
 //   float freqs[]    ; Altered on SnpInfo or AlleleFreq.
 //   int snp_location ; Altered on SnpLoc.
+//       snp_id       ; Altered on SnpInfo.
 //
 static void XMLCALL start(void *data, const char *el, const char **attr) {
   int i; // General iterator.
 
-  if (!strcmp(el, "SnpInfo")) // The SnpInfo start element.
-    for (i = 0; i < 4; i++)   // Reset the recorded frequencies.
+  if (!strcmp(el, "SnpInfo")) { // The SnpInfo start element.
+    for (i = 0; strcmp(attr[i], "rsId"); i += 2);
+    snp_id = atoi(attr[i + 1]); // Store the ID of the SNP.
+    for (i = 0; i < 4; i++)     // Reset the recorded frequencies.
       freqs[i] = 0.0;
+  }//if
 
   if (!strcmp(el, "SnpLoc")) {             // The SnpLoc start element.
     // Search for the genomicAssembly tag.
@@ -140,19 +149,30 @@ static void XMLCALL start(void *data, const char *el, const char **attr) {
     }//if
   }//if
 
+  if (!strcmp(el, "SsInfo")) {     // Compensate for reverse complement.
+    orientation = 0;
+    for (i = 0; strcmp(attr[i], "ssOrientToRs"); i += 2);
+    if (!strcmp(attr[i + 1], "rev"))
+      orientation = 3;
+  }//if
+
   if (!strcmp(el, "AlleleFreq")) { // The AlleleFreq start element.
     switch (attr[1][0]) {          // Store the frequencies if applicable.
       case 'A':
-        freqs[0] = fmaxf(freqs[0], atof(attr[3]));
+        freqs[abs(orientation - 0)] = fmaxf(freqs[abs(orientation - 0)], 
+                                            atof(attr[3]));
         break;
       case 'C':
-        freqs[1] = fmaxf(freqs[1], atof(attr[3]));
+        freqs[abs(orientation - 1)] = fmaxf(freqs[abs(orientation - 1)], 
+                                            atof(attr[3]));
         break;
       case 'G':
-        freqs[2] = fmaxf(freqs[2], atof(attr[3]));
+        freqs[abs(orientation - 2)] = fmaxf(freqs[abs(orientation - 2)], 
+                                            atof(attr[3]));
         break;
       case 'T':
-        freqs[3] = fmaxf(freqs[3], atof(attr[3]));
+        freqs[abs(orientation - 3)] = fmaxf(freqs[abs(orientation - 3)], 
+                                            atof(attr[3]));
         break;
     }//switch
   }//if
@@ -168,10 +188,10 @@ static void XMLCALL start(void *data, const char *el, const char **attr) {
 //
 static void XMLCALL end(void *data, const char *el) {
   if (!strcmp(el, "SnpInfo")) { // The SnpLoc end element.
-    if ((freqs[0] >= FreqThreshold) && (freqs[1] >= FreqThreshold))
-      add_candidate('C', freqs[1], freqs[0]);
-    if ((freqs[2] >= FreqThreshold) && (freqs[3] >= FreqThreshold))
-      add_candidate('G', freqs[2], freqs[3]);
+    if ((freqs[1] >= FreqThreshold) && (freqs[3] >= FreqThreshold))
+      add_candidate('C', freqs[1], freqs[3]);
+    if ((freqs[0] >= FreqThreshold) && (freqs[2] >= FreqThreshold))
+      add_candidate('G', freqs[0], freqs[2]);
   }//if
 }//end
 
@@ -222,16 +242,19 @@ int main(int argc, char **argv) {
   qsort(candidate_list, candidate_list_size, sizeof(candidate), compar);
 
   // Scan the list for CpG islands.
-  for (i = 3; i < candidate_list_size; i++)
-    for (j = 1; j < 4; j++)
-      if (candidate_list[i].pos == candidate_list[i - j].pos + 1)
-        if ((candidate_list[i].nuc == 'G') && 
-            (candidate_list[i - j].nuc == 'C'))
-          printf("%i %f %f %f %f\n", candidate_list[i - j].pos, 
-                                     candidate_list[i].freq1, 
-                                     candidate_list[i].freq2,
-                                     candidate_list[i - j].freq1, 
-                                     candidate_list[i - j].freq2);
+  for (i = 1; i < candidate_list_size; i++) {
+    for (j = i - 1; 
+         j > 0 && candidate_list[i].pos == candidate_list[j].pos; j--);
+    if ((candidate_list[i].nuc == 'G') && (candidate_list[j].nuc == 'C') &&
+        candidate_list[i].pos == candidate_list[j].pos + 1)
+      printf("%i %i %i %f %f %f %f\n", candidate_list[j].pos, 
+                                       candidate_list[j].id, 
+                                       candidate_list[i].id, 
+                                       candidate_list[j].freq1, 
+                                       candidate_list[j].freq2,
+                                       candidate_list[i].freq1, 
+                                       candidate_list[i].freq2);
+  }//for                                         
 
   free(candidate_list);
 
